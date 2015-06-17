@@ -80,7 +80,7 @@ func (t *Tunnel) transport(conn net.Conn) {
         log.Print(err0)
         return
     }
-    log.Println("choose backend:", baddr.String())
+    log.Println("front:", conn.RemoteAddr().String(), "choose backend:", baddr.String())
     conn2, err := net.DialTCP("tcp", nil, baddr)
     if err != nil {
         log.Print(err)

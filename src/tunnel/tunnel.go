@@ -2,14 +2,29 @@ package tunnel
 
 import (
     "io"
+    "fmt"
     "net"
     "log"
     "time"
+    "strings"
+    "math/rand"
     "sync/atomic"
 )
 
+type backendAddrs []*net.TCPAddr
+
+func (self backendAddrs) chooseBackend(bs []*net.TCPAddr) (b *net.TCPAddr, err error) {
+    idx := random(0, len(bs) - 1)
+    if idx < 0 {
+        err = fmt.Errorf("backend hosts empty")
+        return
+    }
+    return bs[idx], nil
+}
+
 type Tunnel struct {
-    faddr, baddr *net.TCPAddr
+    faddr *net.TCPAddr
+    baddrs backendAddrs
     clientMode bool
     cryptoMethod string
     secret []byte
@@ -17,18 +32,27 @@ type Tunnel struct {
     pool *recycler
 }
 
-func NewTunnel(faddr, baddr string, clientMode bool, cryptoMethod, secret string, size uint32) *Tunnel {
+func NewTunnel(faddr, baddrs string, clientMode bool, cryptoMethod, secret string, size uint32) *Tunnel {
     a1, err := net.ResolveTCPAddr("tcp", faddr)
     if err != nil {
         log.Fatalln("resolve frontend error:", err)
     }
-    a2, err := net.ResolveTCPAddr("tcp", baddr)
-    if err != nil {
-        log.Fatalln("resolve backend error:", err)
+
+    baddrsArr := strings.Split(baddrs, ",")
+    if len(baddrsArr) < 1 {
+        log.Println("backend host is empty")
+    }
+    var a2s backendAddrs
+    for _, baddr := range baddrsArr {
+        a2, err := net.ResolveTCPAddr("tcp", baddr)
+        if err != nil {
+            log.Fatalln("resolve backend error:", err)
+        }
+        a2s = append(a2s, a2)
     }
     return &Tunnel{
         faddr: a1,
-        baddr: a2,
+        baddrs: a2s,
         clientMode: clientMode,
         cryptoMethod: cryptoMethod,
         secret: []byte(secret),
@@ -51,7 +75,13 @@ func (t *Tunnel) pipe(dst, src *Conn, c chan int64) {
 
 func (t *Tunnel) transport(conn net.Conn) {
     start := time.Now()
-    conn2, err := net.DialTCP("tcp", nil, t.baddr)
+    baddr, err0 := t.baddrs.chooseBackend(t.baddrs)
+    if err0 != nil {
+        log.Print(err0)
+        return
+    }
+    log.Println("choose backend:", baddr.String())
+    conn2, err := net.DialTCP("tcp", nil, baddr)
     if err != nil {
         log.Print(err)
         return
@@ -96,4 +126,11 @@ func (t *Tunnel) Start() {
         }
         go t.transport(conn)
     }
+}
+
+// range [min, max]
+func random(min, max int) int {
+    max = max + 1
+    rand.Seed(time.Now().UnixNano())
+    return rand.Intn(max - min) + min
 }

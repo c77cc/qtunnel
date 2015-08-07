@@ -216,7 +216,11 @@ func (t *Tunnel) inGFW(conn net.Conn) (in bool, dhost string, d []byte) {
 
 	d = append(d, lastBuf...)
 
-    if len(dhost) > 0 && inStringArray(dhost, gfwList) {
+    if len(dhost) < 1 {
+        log.Println("host not found", string(d[0:200]))
+    }
+
+    if len(dhost) < 1 || inStringArray(dhost, gfwList) {
         in = true
     }
 	return
